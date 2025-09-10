@@ -9,8 +9,19 @@ const GEMINI_MODEL = process.env.NEXT_PUBLIC_GEMINI_MODEL || 'gemini-1.5-flash';
 const GEMINI_TEMPERATURE = parseFloat(process.env.NEXT_PUBLIC_GEMINI_TEMPERATURE || '0.7');
 const GEMINI_MAX_TOKENS = parseInt(process.env.NEXT_PUBLIC_GEMINI_MAX_TOKENS || '2048');
 
-// Initialize Google AI
-const genAI = GOOGLE_API_KEY ? new GoogleGenerativeAI(GOOGLE_API_KEY) : null;
+// Initialize Google AI - Lazy initialization to ensure env vars are available
+function getGoogleAI() {
+  if (!GOOGLE_API_KEY) {
+    console.warn("⚠️ Google API key not found");
+    return null;
+  }
+  try {
+    return new GoogleGenerativeAI(GOOGLE_API_KEY);
+  } catch (error) {
+    console.error("❌ Failed to initialize Google AI:", error);
+    return null;
+  }
+}
 
 // Base Agent interface
 export interface Agent {
@@ -85,6 +96,9 @@ export class RetrievalAgent implements Agent {
     const thinkingSteps: ThinkingStep[] = [];
     
     try {
+      console.log(`🔍 RetrievalAgent: Searching for documents with query: "${input.query}"`);
+      console.log(`📊 Requested documents: ${input.k || 5}`);
+      
       thinkingSteps.push({
         agent: this.name,
         step: 'Vector Search',
@@ -93,24 +107,46 @@ export class RetrievalAgent implements Agent {
       });
 
       const vectorStore = await getVectorStore();
+      console.log(`🗄️ Vector store initialized: ${vectorStore.constructor.name}`);
+      
       const documents = await vectorStore.similaritySearch(input.query, input.k || 5);
+      console.log(`📚 Retrieved ${documents.length} documents`);
+      
+      // Log document details for debugging
+      documents.forEach((doc, index) => {
+        console.log(`📄 Document ${index + 1}: ${doc.content.substring(0, 100)}...`);
+        console.log(`   Distance: ${doc.distance}, Metadata:`, doc.metadata);
+      });
 
       thinkingSteps.push({
         agent: this.name,
         step: 'Vector Search',
         status: 'completed',
         message: `Found ${documents.length} relevant documents`,
-        details: { query: input.query, documentCount: documents.length }
+        details: { 
+          query: input.query, 
+          documentCount: documents.length,
+          documents: documents.map(doc => ({
+            contentLength: doc.content.length,
+            distance: doc.distance,
+            hasMetadata: !!doc.metadata
+          }))
+        }
       });
 
       return { documents, thinkingSteps };
     } catch (error) {
+      console.error(`❌ RetrievalAgent error:`, error);
       thinkingSteps.push({
         agent: this.name,
         step: 'Vector Search',
         status: 'error',
         message: `Error retrieving documents: ${error}`,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+        details: { 
+          error: error instanceof Error ? error.message : 'Unknown error',
+          query: input.query,
+          k: input.k || 5
+        }
       });
       throw error;
     }
@@ -161,6 +197,10 @@ export class AnswerAgent implements Agent {
   }
 
   private async generateAnswer(query: string, context: string): Promise<string> {
+    console.log(`🤖 AnswerAgent: Generating answer for query: "${query}"`);
+    console.log(`📄 Context length: ${context.length} characters`);
+    console.log(`🔑 Google API Key available: ${!!GOOGLE_API_KEY}`);
+    
     const prompt = `Based on the following context, please answer the question. If the context doesn't contain enough information to answer the question, please say so.
 
 Context:
@@ -172,10 +212,13 @@ Answer:`;
 
     // Check if we're in a Vercel environment
     const isVercel = process.env.VERCEL === '1';
+    console.log(`🌐 Environment: ${isVercel ? 'Vercel' : 'Local'}`);
 
     // Try Google Gemini first
+    const genAI = getGoogleAI();
     if (genAI) {
       try {
+        console.log("🚀 Attempting to use Google Gemini...");
         const model = genAI.getGenerativeModel({ 
           model: GEMINI_MODEL,
           generationConfig: {
@@ -185,32 +228,78 @@ Answer:`;
         });
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        return response.text();
+        const answer = response.text();
+        console.log(`✅ Google Gemini response received: ${answer.length} characters`);
+        return answer;
       } catch (error) {
-        console.warn("Google Gemini failed:", error);
+        console.error("❌ Google Gemini failed:", error);
+        console.error("Error details:", {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          apiKey: GOOGLE_API_KEY ? 'Present' : 'Missing'
+        });
+        
         if (isVercel) {
-          // On Vercel, we can't use Ollama, so return a fallback message
-          return "I apologize, but I'm unable to generate a response at the moment. Please ensure your Google Gemini API key is properly configured.";
+          // On Vercel, we can't use Ollama, so try to provide a basic answer from context
+          return this.generateBasicAnswer(query, context);
         }
       }
+    } else {
+      console.warn("⚠️ Google AI not available, trying fallback methods");
     }
 
     // Fallback to Ollama (only for local development)
     if (!isVercel) {
       try {
+        console.log("🦙 Attempting to use Ollama...");
         const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
           model: "gemma3:1b",
           prompt: prompt,
           stream: false
         });
-        return response.data.response;
+        const answer = response.data.response;
+        console.log(`✅ Ollama response received: ${answer.length} characters`);
+        return answer;
       } catch (error) {
-        console.error("Ollama failed:", error);
+        console.error("❌ Ollama failed:", error);
       }
     }
 
-    // Final fallback
-    return "I apologize, but I'm unable to generate a response at the moment. Please try again later.";
+    // Final fallback - try to provide basic answer from context
+    console.log("🔄 Using basic context-based fallback");
+    return this.generateBasicAnswer(query, context);
+  }
+
+  private generateBasicAnswer(query: string, context: string): string {
+    console.log("🔍 Generating basic answer from context...");
+    
+    if (!context || context.trim().length === 0) {
+      return "I don't have any relevant information to answer your question. Please ensure documents are loaded in the knowledge base.";
+    }
+
+    // Simple keyword matching fallback
+    const queryWords = query.toLowerCase().split(/\s+/);
+    const contextLower = context.toLowerCase();
+    
+    // Check if any query words appear in context
+    const matchingWords = queryWords.filter(word => 
+      word.length > 2 && contextLower.includes(word)
+    );
+    
+    if (matchingWords.length > 0) {
+      // Extract relevant sentences containing query words
+      const sentences = context.split(/[.!?]+/).filter(sentence => 
+        sentence.trim().length > 10 && 
+        matchingWords.some(word => sentence.toLowerCase().includes(word))
+      );
+      
+      if (sentences.length > 0) {
+        const relevantText = sentences.slice(0, 3).join('. ').trim();
+        return `Based on the available information: ${relevantText}. (Note: This is a basic response. For more detailed answers, please ensure your Google Gemini API key is properly configured.)`;
+      }
+    }
+    
+    return "The provided text does not contain information about your query. Please try a different question or ensure relevant documents are loaded in the knowledge base.";
   }
 }
 
@@ -330,6 +419,8 @@ export class RefineAgent implements Agent {
   }
 
   private async refineAnswer(query: string, answer: string, critique: string, documents: any[]): Promise<string> {
+    console.log(`🔧 RefineAgent: Refining answer for query: "${query}"`);
+    
     const refinementPrompt = `Please refine the following answer based on the critique provided. Make it more comprehensive and accurate.
 
 Original Query: ${query}
@@ -343,8 +434,10 @@ Refined Answer:`;
     const isVercel = process.env.VERCEL === '1';
 
     // Try Google Gemini first
+    const genAI = getGoogleAI();
     if (genAI) {
       try {
+        console.log("🚀 Attempting to use Google Gemini for refinement...");
         const model = genAI.getGenerativeModel({ 
           model: GEMINI_MODEL,
           generationConfig: {
@@ -354,11 +447,14 @@ Refined Answer:`;
         });
         const result = await model.generateContent(refinementPrompt);
         const response = await result.response;
-        return response.text();
+        const refinedAnswer = response.text();
+        console.log(`✅ Refinement completed: ${refinedAnswer.length} characters`);
+        return refinedAnswer;
       } catch (error) {
-        console.warn("Google Gemini failed for refinement:", error);
+        console.warn("❌ Google Gemini failed for refinement:", error);
         if (isVercel) {
           // On Vercel, we can't use Ollama, so return original answer
+          console.log("🔄 Returning original answer due to Vercel environment");
           return answer;
         }
       }
@@ -367,18 +463,22 @@ Refined Answer:`;
     // Fallback to Ollama (only for local development)
     if (!isVercel) {
       try {
+        console.log("🦙 Attempting to use Ollama for refinement...");
         const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
           model: "gemma3:1b",
           prompt: refinementPrompt,
           stream: false
         });
-        return response.data.response;
+        const refinedAnswer = response.data.response;
+        console.log(`✅ Ollama refinement completed: ${refinedAnswer.length} characters`);
+        return refinedAnswer;
       } catch (error) {
-        console.error("Ollama failed for refinement:", error);
+        console.error("❌ Ollama failed for refinement:", error);
       }
     }
 
     // Return original answer if refinement fails
+    console.log("🔄 Returning original answer due to refinement failure");
     return answer;
   }
 }

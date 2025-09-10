@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Pulmo RAG Superbot",
   description: "A RAG Superbot for Pulmonology that uses multi-agentic architecture",
+  viewport: "width=device-width, initial-scale=1",
 };
 
 export default function RootLayout({
