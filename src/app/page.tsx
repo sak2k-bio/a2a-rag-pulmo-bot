@@ -198,7 +198,7 @@ export default function Home() {
         {/* Chat Container */}
         <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
           {/* Messages */}
-          <div className="h-[1100px] overflow-y-auto p-6 space-y-4">
+          <div className="h-[1000px] overflow-y-auto p-6 space-y-4">
             {messages.map((message) => (
               <div key={message.id} className="space-y-3">
                 {/* Message */}
