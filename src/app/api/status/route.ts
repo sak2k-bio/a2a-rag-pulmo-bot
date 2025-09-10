@@ -13,11 +13,9 @@ export async function GET(request: NextRequest) {
         googleAI: 'unknown'
       },
       configuration: {
-        vectorStoreType: process.env.NEXT_PUBLIC_VECTOR_STORE || 'qdrant',
-        ollamaHost: process.env.NEXT_PUBLIC_OLLAMA_HOST || 'http://localhost:11434',
-        hasGoogleAPIKey: !!process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-        hasQdrantCloud: !!(process.env.NEXT_PUBLIC_QDRANT_CLOUD_URL && process.env.NEXT_PUBLIC_QDRANT_CLOUD_API_KEY),
-        isVercel: process.env.VERCEL === '1'
+        vectorStoreType: process.env.VECTOR_STORE || 'chroma',
+        ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
+        hasGoogleAPIKey: !!process.env.GOOGLE_API_KEY
       }
     };
 
@@ -30,24 +28,18 @@ export async function GET(request: NextRequest) {
       console.warn('Vector store check failed:', error);
     }
 
-    // Check Ollama (only for local development)
+    // Check Ollama
     try {
-      const ollamaHost = process.env.NEXT_PUBLIC_OLLAMA_HOST || 'http://localhost:11434';
-      const isVercel = process.env.VERCEL === '1';
-      
-      if (!isVercel) {
-        await axios.get(`${ollamaHost}/api/tags`, { timeout: 5000 });
-        status.services.ollama = 'online';
-      } else {
-        status.services.ollama = 'not_available_vercel';
-      }
+      const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+      await axios.get(`${ollamaHost}/api/tags`, { timeout: 5000 });
+      status.services.ollama = 'online';
     } catch (error) {
       status.services.ollama = 'offline';
       console.warn('Ollama check failed:', error);
     }
 
     // Check Google AI (if API key is provided)
-    if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) {
+    if (process.env.GOOGLE_API_KEY) {
       status.services.googleAI = 'configured';
     } else {
       status.services.googleAI = 'not_configured';

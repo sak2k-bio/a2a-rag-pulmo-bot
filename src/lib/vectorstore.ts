@@ -40,32 +40,19 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
 // Fallback embedding function for Vercel
 function generateFallbackEmbedding(text: string): number[] {
-  // Improved hash-based embedding for better similarity search
+  // Simple hash-based embedding (not ideal but works for demo)
   const words = text.toLowerCase().split(/\s+/);
   const embedding = new Array(768).fill(0);
   
-  // Create a more sophisticated hash-based embedding
-  words.forEach((word, wordIndex) => {
-    // Create multiple hash values for each word
-    const hashes = [
-      word.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0),
-      word.length,
-      word.charCodeAt(0) || 0,
-      word.charCodeAt(word.length - 1) || 0
-    ];
+  words.forEach((word, index) => {
+    const hash = word.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
     
-    hashes.forEach((hash, hashIndex) => {
-      const normalizedHash = (Math.abs(hash) % 1000) / 1000;
-      const position = (wordIndex * 4 + hashIndex) % 768;
-      embedding[position] = normalizedHash;
-    });
+    const normalizedHash = (Math.abs(hash) % 1000) / 1000;
+    embedding[index % 768] = normalizedHash;
   });
-  
-  // Add text length and character distribution features
-  embedding[760] = Math.min(text.length / 1000, 1); // Normalized text length
-  embedding[761] = (text.match(/[a-z]/g) || []).length / text.length; // Letter ratio
-  embedding[762] = (text.match(/[0-9]/g) || []).length / text.length; // Number ratio
-  embedding[763] = (text.match(/[!?.,;]/g) || []).length / text.length; // Punctuation ratio
   
   return embedding;
 }
