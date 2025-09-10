@@ -381,24 +381,74 @@ Check system status at `/api/status` to monitor:
 - Google AI configuration
 - Overall system health
 
-## 🚀 Production Deployment
+## 🚀 Vercel Deployment (Recommended)
 
-### Environment Variables
+### Quick Deploy to Vercel
 
-For production, ensure all environment variables are set:
+1. **Push to GitHub**:
+   ```bash
+   git add .
+   git commit -m "Ready for Vercel deployment"
+   git push origin main
+   ```
+
+2. **Deploy via Vercel Dashboard**:
+   - Go to [Vercel Dashboard](https://vercel.com/dashboard)
+   - Click "New Project"
+   - Import your GitHub repository
+   - Set root directory to `frontend` (if needed)
+
+3. **Configure Environment Variables**:
+   ```bash
+   # Required for Vercel
+   NEXT_PUBLIC_GOOGLE_API_KEY=your_gemini_api_key
+   NEXT_PUBLIC_QDRANT_CLOUD_URL=your_qdrant_cloud_url
+   NEXT_PUBLIC_QDRANT_CLOUD_API_KEY=your_qdrant_cloud_key
+   NEXT_PUBLIC_VECTOR_STORE=qdrant
+   NEXT_PUBLIC_COLLECTION_NAME=rag_a2a_collection
+   ```
+
+4. **Deploy**: Click "Deploy" and wait for completion
+
+### Vercel CLI Deployment
 
 ```bash
-# Required
+# Install Vercel CLI
+npm i -g vercel
+
+# Login and deploy
+vercel login
+vercel
+
+# Deploy to production
+vercel --prod
+```
+
+### Environment Variables for Vercel
+
+For production, ensure all environment variables are set in Vercel dashboard:
+
+```bash
+# Google Gemini Configuration
 NEXT_PUBLIC_GOOGLE_API_KEY=your_production_key
+NEXT_PUBLIC_GEMINI_MODEL=gemini-1.5-flash
+NEXT_PUBLIC_GEMINI_TEMPERATURE=0.7
+NEXT_PUBLIC_GEMINI_MAX_TOKENS=2048
+
+# Qdrant Cloud Configuration (Required for Vercel)
+NEXT_PUBLIC_QDRANT_CLOUD_URL=your_cloud_url
+NEXT_PUBLIC_QDRANT_CLOUD_API_KEY=your_cloud_key
+
+# Vector Store Configuration
 NEXT_PUBLIC_VECTOR_STORE=qdrant
 NEXT_PUBLIC_COLLECTION_NAME=your_collection
 
-# Optional (for cloud features)
-NEXT_PUBLIC_QDRANT_CLOUD_URL=your_cloud_url
-NEXT_PUBLIC_QDRANT_CLOUD_API_KEY=your_cloud_key
+# App Configuration
+NEXT_PUBLIC_APP_NAME=RAG A2A Superbot
+NEXT_PUBLIC_APP_VERSION=1.0.0
 ```
 
-### Build and Deploy
+### Build and Deploy Locally
 
 ```bash
 # Build the application
@@ -408,12 +458,7 @@ npm run build
 npm run start
 ```
 
-### Deployment Platforms
-
-#### Vercel
-1. Connect your GitHub repository
-2. Set environment variables in Vercel dashboard
-3. Deploy automatically
+### Other Deployment Platforms
 
 #### Netlify
 1. Connect your GitHub repository
@@ -431,6 +476,16 @@ RUN npm run build
 EXPOSE 3000
 CMD ["npm", "start"]
 ```
+
+### 📋 Vercel Deployment Checklist
+
+- [ ] Google Gemini API key configured
+- [ ] Qdrant Cloud account and cluster created
+- [ ] All environment variables set in Vercel dashboard
+- [ ] Repository pushed to GitHub
+- [ ] Vercel project connected to GitHub repository
+- [ ] Build completed successfully
+- [ ] Application tested on deployed URL
 
 ## 🔒 Security
 

@@ -170,7 +170,10 @@ Question: ${query}
 
 Answer:`;
 
-    // Try Google Gemini first, fallback to Ollama
+    // Check if we're in a Vercel environment
+    const isVercel = process.env.VERCEL === '1';
+
+    // Try Google Gemini first
     if (genAI) {
       try {
         const model = genAI.getGenerativeModel({ 
@@ -184,22 +187,30 @@ Answer:`;
         const response = await result.response;
         return response.text();
       } catch (error) {
-        console.warn("Google Gemini failed, trying Ollama:", error);
+        console.warn("Google Gemini failed:", error);
+        if (isVercel) {
+          // On Vercel, we can't use Ollama, so return a fallback message
+          return "I apologize, but I'm unable to generate a response at the moment. Please ensure your Google Gemini API key is properly configured.";
+        }
       }
     }
 
-    // Fallback to Ollama
-    try {
-      const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
-        model: "gemma3:1b",
-        prompt: prompt,
-        stream: false
-      });
-      return response.data.response;
-    } catch (error) {
-      console.error("Both Google Gemini and Ollama failed:", error);
-      return "I apologize, but I'm unable to generate a response at the moment. Please try again later.";
+    // Fallback to Ollama (only for local development)
+    if (!isVercel) {
+      try {
+        const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
+          model: "gemma3:1b",
+          prompt: prompt,
+          stream: false
+        });
+        return response.data.response;
+      } catch (error) {
+        console.error("Ollama failed:", error);
+      }
     }
+
+    // Final fallback
+    return "I apologize, but I'm unable to generate a response at the moment. Please try again later.";
   }
 }
 
@@ -328,7 +339,10 @@ Supporting Documents: ${documents.map(doc => doc.content).join('\n\n')}
 
 Refined Answer:`;
 
-    // Try Google Gemini first, fallback to Ollama
+    // Check if we're in a Vercel environment
+    const isVercel = process.env.VERCEL === '1';
+
+    // Try Google Gemini first
     if (genAI) {
       try {
         const model = genAI.getGenerativeModel({ 
@@ -342,21 +356,29 @@ Refined Answer:`;
         const response = await result.response;
         return response.text();
       } catch (error) {
-        console.warn("Google Gemini failed for refinement, trying Ollama:", error);
+        console.warn("Google Gemini failed for refinement:", error);
+        if (isVercel) {
+          // On Vercel, we can't use Ollama, so return original answer
+          return answer;
+        }
       }
     }
 
-    // Fallback to Ollama
-    try {
-      const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
-        model: "gemma3:1b",
-        prompt: refinementPrompt,
-        stream: false
-      });
-      return response.data.response;
-    } catch (error) {
-      console.error("Both Google Gemini and Ollama failed for refinement:", error);
-      return answer; // Return original answer if refinement fails
+    // Fallback to Ollama (only for local development)
+    if (!isVercel) {
+      try {
+        const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
+          model: "gemma3:1b",
+          prompt: refinementPrompt,
+          stream: false
+        });
+        return response.data.response;
+      } catch (error) {
+        console.error("Ollama failed for refinement:", error);
+      }
     }
+
+    // Return original answer if refinement fails
+    return answer;
   }
 }

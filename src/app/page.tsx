@@ -46,8 +46,8 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [pipelineMode, setPipelineMode] = useState('meta');
-  const [isLoadingSamples, setIsLoadingSamples] = useState(false);
   const [expandedThinkingSteps, setExpandedThinkingSteps] = useState<Record<string, boolean>>({});
+  const [isClient, setIsClient] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -57,6 +57,10 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -121,41 +125,6 @@ export default function Home() {
     }
   };
 
-  const loadSampleDocuments = async () => {
-    setIsLoadingSamples(true);
-    try {
-      const response = await fetch('/api/sample-documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const botMessage: Message = {
-          id: Date.now().toString(),
-          type: 'bot',
-          content: `✅ ${data.message}\n\nI've loaded ${data.documentCount} sample documents about AI, machine learning, and RAG systems. You can now ask me questions about these topics!`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, botMessage]);
-      } else {
-        throw new Error(data.error || 'Failed to load sample documents');
-      }
-    } catch (error) {
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        type: 'bot',
-        content: `❌ Failed to load sample documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoadingSamples(false);
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -182,6 +151,18 @@ export default function Home() {
     }));
   };
 
+  // Consistent timestamp formatting to prevent hydration errors
+  const formatTimestamp = (date: Date) => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const seconds = date.getSeconds();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    const displaySeconds = seconds.toString().padStart(2, '0');
+    return `${displayHours}:${displayMinutes}:${displaySeconds} ${ampm}`;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
@@ -189,7 +170,7 @@ export default function Home() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <Brain className="w-8 h-8 text-purple-600 mr-3" />
-            <h1 className="text-4xl font-bold text-gray-800">RAG A2A Superbot</h1>
+            <h1 className="text-4xl font-bold text-gray-800">Pulmo RAG Superbot</h1>
           </div>
           <p className="text-lg text-gray-600 mb-6">
             Intelligent Agent-to-Agent Architecture with Real-time Thinking Process
@@ -211,18 +192,6 @@ export default function Home() {
                 <option value="meta">META: Intelligent Selection</option>
               </select>
             </div>
-            <button
-              onClick={loadSampleDocuments}
-              disabled={isLoadingSamples}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-            >
-              {isLoadingSamples ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              ) : (
-                <FileText className="w-4 h-4" />
-              )}
-              <span>{isLoadingSamples ? 'Loading...' : 'Load Sample Docs'}</span>
-            </button>
           </div>
         </div>
 
@@ -250,9 +219,11 @@ export default function Home() {
                         : 'bg-gray-100 text-gray-800'
                     }`}>
                       <p className="whitespace-pre-wrap">{message.content}</p>
-                      <p className="text-xs opacity-70 mt-1">
-                        {message.timestamp.toLocaleTimeString()}
-                      </p>
+                      {isClient && (
+                        <p className="text-xs opacity-70 mt-1">
+                          {formatTimestamp(message.timestamp)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -12,18 +12,49 @@ const QDRANT_CLOUD_API_KEY = process.env.NEXT_PUBLIC_QDRANT_CLOUD_API_KEY;
 const COLLECTION_NAME = process.env.NEXT_PUBLIC_COLLECTION_NAME || 'rag_a2a_collection';
 const OLLAMA_HOST = process.env.NEXT_PUBLIC_OLLAMA_HOST || 'http://localhost:11434';
 
-// Embeddings function
+// Embeddings function - Updated for Vercel compatibility
 export async function getEmbedding(text: string): Promise<number[]> {
   try {
+    // Check if we're in a Vercel environment
+    const isVercel = process.env.VERCEL === '1';
+    
+    if (isVercel) {
+      // Use a simple text-based embedding for Vercel (fallback)
+      // In production, you should use a proper embedding service
+      console.warn("⚠️ Using fallback embedding for Vercel deployment");
+      return generateFallbackEmbedding(text);
+    }
+    
+    // Try Ollama for local development
     const response = await axios.post(`${OLLAMA_HOST}/api/embeddings`, {
       model: "nomic-embed-text",
       prompt: text
     });
     return response.data.embedding;
   } catch (error) {
-    console.error("❌ Embedding failed:", error);
-    throw error;
+    console.error("❌ Embedding failed, using fallback:", error);
+    // Fallback to simple embedding
+    return generateFallbackEmbedding(text);
   }
+}
+
+// Fallback embedding function for Vercel
+function generateFallbackEmbedding(text: string): number[] {
+  // Simple hash-based embedding (not ideal but works for demo)
+  const words = text.toLowerCase().split(/\s+/);
+  const embedding = new Array(768).fill(0);
+  
+  words.forEach((word, index) => {
+    const hash = word.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    
+    const normalizedHash = (Math.abs(hash) % 1000) / 1000;
+    embedding[index % 768] = normalizedHash;
+  });
+  
+  return embedding;
 }
 
 // Vector store interface
