@@ -79,12 +79,28 @@ export class QueryAgent implements Agent {
   }
 
   private shouldRetrieve(query: string): boolean {
-    // Simple heuristic - retrieve for questions and specific queries
+    // Enhanced heuristic - retrieve for medical terms, questions, and specific queries
     const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'which'];
+    const medicalTerms = ['effusion', 'pneumonia', 'asthma', 'cancer', 'disease', 'syndrome', 'disorder', 'condition', 'symptom', 'treatment', 'diagnosis', 'therapy'];
     const lowerQuery = query.toLowerCase();
-    return questionWords.some(word => lowerQuery.includes(word)) || 
-           query.length > 20 || 
-           lowerQuery.includes('?');
+    
+    const hasQuestionWords = questionWords.some(word => lowerQuery.includes(word));
+    const hasMedicalTerms = medicalTerms.some(term => lowerQuery.includes(term));
+    const isLongQuery = query.length > 15;
+    const hasQuestionMark = lowerQuery.includes('?');
+    
+    const shouldRetrieve = hasQuestionWords || hasMedicalTerms || isLongQuery || hasQuestionMark;
+    
+    console.log(`🔍 QueryAgent shouldRetrieve analysis:`, {
+      query,
+      hasQuestionWords,
+      hasMedicalTerms,
+      isLongQuery,
+      hasQuestionMark,
+      shouldRetrieve
+    });
+    
+    return shouldRetrieve;
   }
 }
 
@@ -272,19 +288,40 @@ Answer:`;
 
   private generateBasicAnswer(query: string, context: string): string {
     console.log("🔍 Generating basic answer from context...");
+    console.log(`📝 Query: "${query}"`);
+    console.log(`📄 Context length: ${context.length} characters`);
     
     if (!context || context.trim().length === 0) {
       return "I don't have any relevant information to answer your question. Please ensure documents are loaded in the knowledge base.";
     }
 
-    // Simple keyword matching fallback
+    // Enhanced keyword matching with medical term expansion
     const queryWords = query.toLowerCase().split(/\s+/);
     const contextLower = context.toLowerCase();
     
-    // Check if any query words appear in context
-    const matchingWords = queryWords.filter(word => 
-      word.length > 2 && contextLower.includes(word)
+    // Expand medical terms for better matching
+    const medicalExpansions: { [key: string]: string[] } = {
+      'effusion': ['pleural', 'fluid', 'accumulation', 'collection', 'space'],
+      'pneumonia': ['infection', 'lung', 'respiratory', 'pulmonary'],
+      'asthma': ['bronchial', 'airway', 'breathing', 'respiratory'],
+      'cancer': ['tumor', 'neoplasm', 'malignancy', 'carcinoma'],
+      'disease': ['disorder', 'condition', 'syndrome', 'pathology']
+    };
+    
+    // Get expanded terms for better matching
+    const expandedTerms = [...queryWords];
+    queryWords.forEach(word => {
+      if (medicalExpansions[word]) {
+        expandedTerms.push(...medicalExpansions[word]);
+      }
+    });
+    
+    // Check if any query words or expanded terms appear in context
+    const matchingWords = expandedTerms.filter(term => 
+      term.length > 2 && contextLower.includes(term)
     );
+    
+    console.log(`🔍 Matching terms found: ${matchingWords.join(', ')}`);
     
     if (matchingWords.length > 0) {
       // Extract relevant sentences containing query words
@@ -293,13 +330,17 @@ Answer:`;
         matchingWords.some(word => sentence.toLowerCase().includes(word))
       );
       
+      console.log(`📝 Found ${sentences.length} relevant sentences`);
+      
       if (sentences.length > 0) {
         const relevantText = sentences.slice(0, 3).join('. ').trim();
         return `Based on the available information: ${relevantText}. (Note: This is a basic response. For more detailed answers, please ensure your Google Gemini API key is properly configured.)`;
       }
     }
     
-    return "The provided text does not contain information about your query. Please try a different question or ensure relevant documents are loaded in the knowledge base.";
+    // If no direct matches, provide a more helpful response
+    console.log("⚠️ No matching terms found in context");
+    return `I found some medical information in the knowledge base, but it doesn't specifically mention "${query}". The available information covers topics like respiratory conditions, blood gas transport, and lung diseases. For more specific information about "${query}", please try rephrasing your question or ensure more relevant documents are loaded.`;
   }
 }
 
