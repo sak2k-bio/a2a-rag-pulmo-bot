@@ -7,6 +7,11 @@ NEXT_PUBLIC_GEMINI_MODEL=gemini-1.5-flash
 NEXT_PUBLIC_GEMINI_TEMPERATURE=0.7
 NEXT_PUBLIC_GEMINI_MAX_TOKENS=2048
 
+# Google Embedding Configuration (Gemini embedding-001)
+# 3072-dimensional embeddings. Uses the same API key as Gemini above.
+NEXT_PUBLIC_EMBEDDING_MODEL=embedding-001
+NEXT_PUBLIC_EMBEDDING_DIM=3072
+
 # Qdrant Cloud Configuration (Required for Vercel)
 NEXT_PUBLIC_QDRANT_CLOUD_URL=https://your-cluster-id.eu-central.aws.cloud.qdrant.io
 NEXT_PUBLIC_QDRANT_CLOUD_API_KEY=your_qdrant_cloud_api_key_here
@@ -21,3 +26,4 @@ NEXT_PUBLIC_APP_VERSION=1.0.0
 
 # Note: Ollama and local Qdrant are not supported on Vercel
 # Use Qdrant Cloud for production deployment
+# Gemini embedding-001 is used for embeddings (3072 dimensions)

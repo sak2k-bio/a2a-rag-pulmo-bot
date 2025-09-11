@@ -1,6 +1,6 @@
 import { ChromaClient } from 'chromadb';
 import { QdrantClient } from '@qdrant/js-client-rest';
-import axios from 'axios';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Configuration - Using Next.js public environment variables
 const VECTOR_STORE_TYPE = process.env.NEXT_PUBLIC_VECTOR_STORE || 'qdrant';
@@ -10,52 +10,48 @@ const QDRANT_PORT = parseInt(process.env.NEXT_PUBLIC_QDRANT_PORT || '6333');
 const QDRANT_CLOUD_URL = process.env.NEXT_PUBLIC_QDRANT_CLOUD_URL;
 const QDRANT_CLOUD_API_KEY = process.env.NEXT_PUBLIC_QDRANT_CLOUD_API_KEY;
 const COLLECTION_NAME = process.env.NEXT_PUBLIC_COLLECTION_NAME || 'rag_a2a_collection';
-const OLLAMA_HOST = process.env.NEXT_PUBLIC_OLLAMA_HOST || 'http://localhost:11434';
+const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+const EMBEDDING_MODEL = process.env.NEXT_PUBLIC_EMBEDDING_MODEL || 'embedding-001';
+const EMBEDDING_DIM = parseInt(process.env.NEXT_PUBLIC_EMBEDDING_DIM || '3072');
 
-// Embeddings function - Updated for Vercel compatibility
+// Embeddings function - Gemini embedding-001 (3072 dims)
 export async function getEmbedding(text: string): Promise<number[]> {
   try {
-    // Check if we're in a Vercel environment
-    const isVercel = process.env.VERCEL === '1';
-    
-    if (isVercel) {
-      // Use a simple text-based embedding for Vercel (fallback)
-      // In production, you should use a proper embedding service
-      console.warn("⚠️ Using fallback embedding for Vercel deployment");
-      return generateFallbackEmbedding(text);
+    if (!GOOGLE_API_KEY) {
+      throw new Error("Google API key not found for embeddings");
     }
-    
-    // Try Ollama for local development
-    const response = await axios.post(`${OLLAMA_HOST}/api/embeddings`, {
-      model: "nomic-embed-text",
-      prompt: text
-    });
-    return response.data.embedding;
+    return await getGoogleEmbedding(text);
   } catch (error) {
-    console.error("❌ Embedding failed, using fallback:", error);
-    // Fallback to simple embedding
-    return generateFallbackEmbedding(text);
+    console.error("❌ Embedding failed:", error);
+    throw error;
   }
 }
 
-// Fallback embedding function for Vercel
-function generateFallbackEmbedding(text: string): number[] {
-  // Simple hash-based embedding (not ideal but works for demo)
-  const words = text.toLowerCase().split(/\s+/);
-  const embedding = new Array(768).fill(0);
-  
-  words.forEach((word, index) => {
-    const hash = word.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0);
-      return a & a;
-    }, 0);
+// Google Gemini Embeddings function
+async function getGoogleEmbedding(text: string): Promise<number[]> {
+  try {
+    if (!GOOGLE_API_KEY) {
+      throw new Error("Google API key not found");
+    }
+
+    const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+    const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
     
-    const normalizedHash = (Math.abs(hash) % 1000) / 1000;
-    embedding[index % 768] = normalizedHash;
-  });
-  
-  return embedding;
+    const result = await model.embedContent(text);
+    const embedding = result.embedding.values;
+    
+    console.log(`✅ Generated Google ${EMBEDDING_MODEL} (${embedding.length} dimensions)`);
+    if (embedding.length !== EMBEDDING_DIM) {
+      console.warn(`⚠️ Embedding dimension (${embedding.length}) does not match configured EMBEDDING_DIM (${EMBEDDING_DIM}).`);
+    }
+    return embedding;
+  } catch (error) {
+    console.error("❌ Google embeddings failed:", error);
+    throw error;
+  }
 }
+
+// No local fallback supported to enforce strict 3072-d embeddings
 
 // Vector store interface
 export interface VectorStore {
@@ -92,6 +88,8 @@ class ChromaVectorStore implements VectorStore {
       const embeddings = await Promise.all(
         documents.map(doc => getEmbedding(doc.content))
       );
+      // For Qdrant, validate vector size against collection's configured size
+      // Note: Chroma path does not require this validation
       
       const ids = documents.map((_, i) => `doc_${Date.now()}_${i}`);
       const metadatas = documents.map(doc => doc.metadata || {});
@@ -174,16 +172,11 @@ class QdrantVectorStore implements VectorStore {
   async init(): Promise<void> {
     try {
       const collections = await this.client.getCollections();
-      const collectionExists = collections.collections.some(
-        (col: any) => col.name === this.collectionName
-      );
-
-      if (!collectionExists) {
-        await this.client.createCollection(this.collectionName, {
-          vectors: { size: 768, distance: "Cosine" }
-        });
+      const collection = collections.collections.find((col: any) => col.name === this.collectionName);
+      if (!collection) {
+        throw new Error(`Qdrant collection '${this.collectionName}' not found. Please create it in Qdrant Cloud and set the correct NEXT_PUBLIC_COLLECTION_NAME.`);
       }
-      console.log("✅ Qdrant collection initialized:", this.collectionName);
+      console.log("✅ Qdrant collection found:", this.collectionName);
     } catch (err) {
       console.error("❌ Qdrant init error:", err);
       throw err;
@@ -205,6 +198,17 @@ class QdrantVectorStore implements VectorStore {
         }
       }));
       
+      // Validate vector size matches collection configuration to avoid 400s
+      try {
+        const info = await this.client.getCollection(this.collectionName);
+        const expectedSize = (info as any)?.config?.params?.vectors?.size as number | undefined;
+        if (expectedSize && points[0].vector.length !== expectedSize) {
+          throw new Error(`Embedding dimension ${points[0].vector.length} does not match collection vector size ${expectedSize} for '${this.collectionName}'.`);
+        }
+      } catch (e) {
+        console.warn("⚠️ Could not verify Qdrant collection vector size before upsert:", e);
+      }
+
       await this.client.upsert(this.collectionName, {
         wait: true,
         points
@@ -220,6 +224,12 @@ class QdrantVectorStore implements VectorStore {
   async similaritySearch(query: string, k: number): Promise<Array<{ content: string; metadata: any; distance: number }>> {
     try {
       const queryEmbedding = await getEmbedding(query);
+      // Validate embedding size against collection's configured size
+      const infoAny: any = await this.client.getCollection(this.collectionName);
+      const expectedSize: number | undefined = infoAny?.result?.config?.params?.vectors?.size ?? infoAny?.config?.params?.vectors?.size;
+      if (typeof expectedSize === 'number' && queryEmbedding.length !== expectedSize) {
+        throw new Error(`Query embedding dimension ${queryEmbedding.length} does not match collection vector size ${expectedSize} for '${this.collectionName}'.`);
+      }
       const results = await this.client.search(this.collectionName, {
         vector: queryEmbedding,
         limit: k,

@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "node test-gemini-qdrant.mjs",
     "test-integration": "node test-gemini-qdrant.mjs",
+    "test-embedding": "node test-google-embedding.mjs",
     "postinstall": "next telemetry disable"
   },
   "dependencies": {
